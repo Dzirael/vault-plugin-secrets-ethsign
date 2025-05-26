@@ -18,9 +18,10 @@ import (
 	"log"
 	"os"
 
+	"vault-plugin-secrets-ethsign/backend"
+
 	"github.com/hashicorp/vault/api"
 	"github.com/hashicorp/vault/sdk/plugin"
-	"github.com/kaleido-io/vault-plugin-secrets-ethsign/backend"
 )
 
 func main() {
