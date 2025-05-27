@@ -25,10 +25,6 @@ func pathCreateAndList(b *backend) *framework.Path {
 				Description: "Hexidecimal string for the private key (32-byte or 64-char long). If present, the request will import the given key instead of generating a new key.",
 				Default:     "",
 			},
-			"secret_id": {
-				Type:        framework.TypeString,
-				Description: "UUID to identify the Ethereum account. If not provided, a new UUID will be generated.",
-			},
 		},
 	}
 }

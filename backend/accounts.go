@@ -70,31 +70,33 @@ func (b *backend) listAccounts(ctx context.Context, req *logical.Request, data *
 func (b *backend) createAccount(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 	spew.Dump(req)
 	spew.Dump(data)
-	keyInput := data.Get("privateKey").(string)
-	var privateKey *ecdsa.PrivateKey
-	var privateKeyString string
-	var err error
 
-	if keyInput != "" {
-		re := regexp.MustCompile("[0-9a-fA-F]{64}$")
-		key := re.FindString(keyInput)
-		if key == "" {
-			b.Logger().Error("Input private key did not parse successfully", "privateKey", keyInput)
-			return nil, fmt.Errorf("privateKey must be a 32-byte hexidecimal string")
-		}
-		privateKey, err = crypto.HexToECDSA(key)
-		if err != nil {
-			b.Logger().Error("Error reconstructing private key from input hex", "error", err)
-			return nil, fmt.Errorf("Error reconstructing private key from input hex")
-		}
-		privateKeyString = key
-	} else {
-		privateKey, _ = crypto.GenerateKey()
-		privateKeyBytes := crypto.FromECDSA(privateKey)
-		privateKeyString = hexutil.Encode(privateKeyBytes)[2:]
+	secretIDStr := data.Get("secret_id").(string)
+	if secretIDStr == "" {
+		return nil, fmt.Errorf("secret_id is required")
 	}
 
+	secretID, err := uuid.Parse(secretIDStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid secret_id format: %v", err)
+	}
+
+	existingAccount, err := b.retrieveAccountBySecretID(ctx, req, secretID.String())
+	if err != nil {
+		return nil, err
+	}
+	if existingAccount != nil {
+		return nil, fmt.Errorf("account with secret_id %s already exists", secretID)
+	}
+
+	privateKey, err := crypto.GenerateKey()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate private key: %v", err)
+	}
 	defer ZeroKey(privateKey)
+
+	privateKeyBytes := crypto.FromECDSA(privateKey)
+	privateKeyString := hexutil.Encode(privateKeyBytes)[2:]
 
 	publicKey := privateKey.Public()
 	publicKeyECDSA, _ := publicKey.(*ecdsa.PublicKey)
@@ -104,8 +106,6 @@ func (b *backend) createAccount(ctx context.Context, req *logical.Request, data 
 	hash := sha3.NewLegacyKeccak256()
 	hash.Write(publicKeyBytes[1:])
 	address := hexutil.Encode(hash.Sum(nil)[12:])
-
-	secretID := data.Get("secret_id").(uuid.UUID)
 
 	accountPath := fmt.Sprintf("accounts/%s", secretID.String())
 
@@ -129,6 +129,23 @@ func (b *backend) createAccount(ctx context.Context, req *logical.Request, data 
 			"secret_id": accountJSON.SecretID,
 		},
 	}, nil
+}
+
+func (b *backend) retrieveAccountBySecretID(ctx context.Context, req *logical.Request, secretID string) (*Account, error) {
+	path := fmt.Sprintf("accounts/%s", secretID)
+	entry, err := req.Storage.Get(ctx, path)
+	if err != nil {
+		b.Logger().Error("Failed to retrieve the account by secret ID", "path", path, "error", err)
+		return nil, err
+	}
+	if entry == nil {
+		return nil, nil
+	}
+	var account Account
+	if err := entry.DecodeJSON(&account); err != nil {
+		return nil, err
+	}
+	return &account, nil
 }
 
 func (b *backend) readAccount(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
