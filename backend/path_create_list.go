@@ -15,7 +15,7 @@ func pathCreateAndList(b *backend) *framework.Path {
 		HelpSynopsis: "List all the Ethereum accounts maintained by the plugin backend and create new accounts.",
 		HelpDescription: `
 
-    LIST - list all accounts.
+    LIST - list all accounts .
     POST - create a new account with UUID as identifier.
 
     `,
