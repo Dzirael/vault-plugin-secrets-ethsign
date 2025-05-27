@@ -16,7 +16,7 @@ func pathCreateAndList(b *backend) *framework.Path {
 		HelpDescription: `
 
     LIST - list all accounts
-    POST - create a new account with UUID as identifier
+    POST - create a new account with UUID as identifier.
 
     `,
 		Fields: map[string]*framework.FieldSchema{
