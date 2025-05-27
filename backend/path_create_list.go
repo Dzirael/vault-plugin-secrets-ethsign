@@ -7,7 +7,7 @@ import (
 
 func pathCreateAndList(b *backend) *framework.Path {
 	return &framework.Path{
-		Pattern: "accounts/" + framework.GenericNameRegex("secret_id") + "?",
+		Pattern: "accounts/" + framework.GenericNameRegex("secret_id"),
 		Callbacks: map[logical.Operation]framework.OperationFunc{
 			logical.ListOperation:   b.listAccounts,
 			logical.UpdateOperation: b.createAccount,

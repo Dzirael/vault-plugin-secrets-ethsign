@@ -7,7 +7,7 @@ import (
 
 func pathReadAndDelete(b *backend) *framework.Path {
 	return &framework.Path{
-		Pattern:      "accounts2/" + framework.GenericNameRegex("name") + "?",
+		Pattern:      "accounts/" + framework.GenericNameRegex("secret_id") + "?",
 		HelpSynopsis: "Create, get or delete an Ethereum account by name",
 		HelpDescription: `
 
@@ -17,7 +17,7 @@ func pathReadAndDelete(b *backend) *framework.Path {
 
     `,
 		Fields: map[string]*framework.FieldSchema{
-			"name": &framework.FieldSchema{Type: framework.TypeString},
+			"secret_id": &framework.FieldSchema{Type: framework.TypeString},
 		},
 		ExistenceCheck: b.pathExistenceCheck,
 		Callbacks: map[logical.Operation]framework.OperationFunc{

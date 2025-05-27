@@ -22,7 +22,6 @@ import (
 	"math/big"
 	"regexp"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/common/math"
@@ -68,9 +67,6 @@ func (b *backend) listAccounts(ctx context.Context, req *logical.Request, data *
 }
 
 func (b *backend) createAccount(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	spew.Dump(req)
-	spew.Dump(data)
-
 	secretIDStr := data.Get("secret_id").(string)
 	if secretIDStr == "" {
 		return nil, fmt.Errorf("secret_id is required")
@@ -86,7 +82,13 @@ func (b *backend) createAccount(ctx context.Context, req *logical.Request, data 
 		return nil, err
 	}
 	if existingAccount != nil {
-		return nil, fmt.Errorf("account with secret_id %s already exists", secretID)
+		return &logical.Response{
+			Data: map[string]interface{}{
+				"address":    existingAccount.Address,
+				"public_key": existingAccount.PublicKey,
+				"secret_id":  existingAccount.SecretID,
+			},
+		}, nil
 	}
 
 	privateKey, err := crypto.GenerateKey()
@@ -125,8 +127,9 @@ func (b *backend) createAccount(ctx context.Context, req *logical.Request, data 
 
 	return &logical.Response{
 		Data: map[string]interface{}{
-			"address":   accountJSON.Address,
-			"secret_id": accountJSON.SecretID,
+			"address":    accountJSON.Address,
+			"public_key": accountJSON.PublicKey,
+			"secret_id":  accountJSON.SecretID,
 		},
 	}, nil
 }
