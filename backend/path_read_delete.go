@@ -8,12 +8,12 @@ import (
 func pathReadAndDelete(b *backend) *framework.Path {
 	return &framework.Path{
 		Pattern:      "accounts/" + framework.GenericNameRegex("secret_id") + "?",
-		HelpSynopsis: "Create, get or delete an Ethereum account by name",
+		HelpSynopsis: "Create, get or delete an Ethereum account by secret_id",
 		HelpDescription: `
 
-    POST - create a new account for the given name
-    GET - return the account by the name
-    DELETE - deletes the account by the name
+    POST - create a new account for the given secret_id
+    GET - return the account by the secret_id
+    DELETE - deletes the account by the secret_id
 
     `,
 		Fields: map[string]*framework.FieldSchema{

@@ -7,7 +7,7 @@ import (
 
 func pathSign(b *backend) *framework.Path {
 	return &framework.Path{
-		Pattern:      "accounts/" + framework.GenericNameRegex("name") + "/sign",
+		Pattern:      "accounts/" + framework.GenericNameRegex("secret_id") + "/sign",
 		HelpSynopsis: "Sign a provided transaction object.",
 		HelpDescription: `
 
@@ -15,7 +15,10 @@ func pathSign(b *backend) *framework.Path {
 
     `,
 		Fields: map[string]*framework.FieldSchema{
-			"name": &framework.FieldSchema{Type: framework.TypeString},
+			"secret_id": &framework.FieldSchema{
+				Type:        framework.TypeString,
+				Description: "UUID to identify the Ethereum account",
+			},
 			"to": &framework.FieldSchema{
 				Type:        framework.TypeString,
 				Description: "(optional when creating new contract) The contract address the transaction is directed to.",

@@ -5,18 +5,16 @@ import (
 	"github.com/hashicorp/vault/sdk/logical"
 )
 
-func pathCreateAndList(b *backend) *framework.Path {
+func pathCreateAndRead(b *backend) *framework.Path {
 	return &framework.Path{
 		Pattern: "accounts/" + framework.GenericNameRegex("secret_id"),
 		Callbacks: map[logical.Operation]framework.OperationFunc{
-			logical.ListOperation:   b.listAccounts,
 			logical.UpdateOperation: b.createAccount,
 		},
-		HelpSynopsis: "List all the Ethereum accounts maintained by the plugin backend and create new accounts.",
+		HelpSynopsis: "Create or read a new account with UUID as identifier",
 		HelpDescription: `
 
-    LIST - list all accounts .
-    POST - create a new account with UUID as identifier.
+    POST - create or read a new account with UUID as identifier
 
     `,
 		Fields: map[string]*framework.FieldSchema{

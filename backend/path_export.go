@@ -7,15 +7,15 @@ import (
 
 func pathExport(b *backend) *framework.Path {
 	return &framework.Path{
-		Pattern:      "export/accounts/" + framework.GenericNameRegex("name"),
+		Pattern:      "export/accounts/" + framework.GenericNameRegex("secret_id"),
 		HelpSynopsis: "Export an Ethereum account",
 		HelpDescription: `
-
-    GET - return the account by the name with the private key
+		
+    GET - return the account by the secret_id with the private key
 
     `,
 		Fields: map[string]*framework.FieldSchema{
-			"name": &framework.FieldSchema{Type: framework.TypeString},
+			"secret_id": &framework.FieldSchema{Type: framework.TypeString},
 		},
 		ExistenceCheck: b.pathExistenceCheck,
 		Callbacks: map[logical.Operation]framework.OperationFunc{

@@ -48,8 +48,8 @@ type Account struct {
 
 func paths(b *backend) []*framework.Path {
 	return []*framework.Path{
-		pathCreateAndList(b),
-		pathReadAndDelete(b),
+		pathCreateAndRead(b),
+		//pathReadAndDelete(b),
 		pathSign(b),
 		pathExport(b),
 		//pathPublic(b),
@@ -170,9 +170,9 @@ func (b *backend) readAccount(ctx context.Context, req *logical.Request, data *f
 }
 
 func (b *backend) exportAccount(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	address := data.Get("name").(string)
-	b.Logger().Info("Retrieving account for address", "address", address)
-	account, err := b.retrieveAccount(ctx, req, address)
+	secretID := data.Get("secret_id").(string)
+	b.Logger().Info("Retrieving account for secret_id", "secret_id", secretID)
+	account, err := b.retrieveAccountBySecretID(ctx, req, secretID)
 	if err != nil {
 		return nil, err
 	}
@@ -184,6 +184,7 @@ func (b *backend) exportAccount(ctx context.Context, req *logical.Request, data 
 		Data: map[string]interface{}{
 			"address":    account.Address,
 			"privateKey": account.PrivateKey,
+			"secret_id":  account.SecretID,
 		},
 	}, nil
 }
@@ -233,7 +234,19 @@ func (b *backend) retrieveAccount(ctx context.Context, req *logical.Request, add
 }
 
 func (b *backend) signTx(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	from := data.Get("name").(string)
+	secretID := data.Get("secret_id").(string)
+	if secretID == "" {
+		return nil, fmt.Errorf("secret_id is required")
+	}
+
+	account, err := b.retrieveAccountBySecretID(ctx, req, secretID)
+	if err != nil {
+		b.Logger().Error("Failed to retrieve the signing account", "secret_id", secretID, "error", err)
+		return nil, fmt.Errorf("Error retrieving signing account with secret_id %s", secretID)
+	}
+	if account == nil {
+		return nil, fmt.Errorf("Signing account with secret_id %s does not exist", secretID)
+	}
 
 	var txDataToSign []byte
 	dataInput := data.Get("data").(string)
@@ -245,20 +258,12 @@ func (b *backend) signTx(ctx context.Context, req *logical.Request, data *framew
 		dataInput = "0x" + dataInput
 	}
 
-	txDataToSign, err := hexutil.Decode(dataInput)
+	txDataToSign, err = hexutil.Decode(dataInput)
 	if err != nil {
 		b.Logger().Error("Failed to decode payload for the 'data' field", "error", err)
 		return nil, err
 	}
 
-	account, err := b.retrieveAccount(ctx, req, from)
-	if err != nil {
-		b.Logger().Error("Failed to retrieve the signing account", "address", from, "error", err)
-		return nil, fmt.Errorf("Error retrieving signing account %s", from)
-	}
-	if account == nil {
-		return nil, fmt.Errorf("Signing account %s does not exist", from)
-	}
 	amount := ValidNumber(data.Get("value").(string))
 	if amount == nil {
 		b.Logger().Error("Invalid amount for the 'value' field", "value", data.Get("value").(string))
@@ -282,13 +287,6 @@ func (b *backend) signTx(ctx context.Context, req *logical.Request, data *framew
 
 	gasPrice := ValidNumber(data.Get("gasPrice").(string))
 
-	privateKey, err := crypto.HexToECDSA(account.PrivateKey)
-	if err != nil {
-		b.Logger().Error("Error reconstructing private key from retrieved hex", "error", err)
-		return nil, fmt.Errorf("Error reconstructing private key from retrieved hex")
-	}
-	defer ZeroKey(privateKey)
-
 	nonceIn := ValidNumber(data.Get("nonce").(string))
 	var nonce uint64
 	nonce = nonceIn.Uint64()
@@ -306,11 +304,21 @@ func (b *backend) signTx(ctx context.Context, req *logical.Request, data *framew
 	} else {
 		signer = types.NewEIP155Signer(chainId)
 	}
+
+	privateKey, err := crypto.HexToECDSA(account.PrivateKey)
+	if err != nil {
+		defer ZeroKey(privateKey)
+		b.Logger().Error("Error reconstructing private key from retrieved hex", "error", err)
+		return nil, fmt.Errorf("Error reconstructing private key from retrieved hex")
+	}
+
 	signedTx, err := types.SignTx(tx, signer, privateKey)
 	if err != nil {
+		defer ZeroKey(privateKey)
 		b.Logger().Error("Failed to sign the transaction object", "error", err)
 		return nil, err
 	}
+	defer ZeroKey(privateKey)
 
 	var signedTxBuff bytes.Buffer
 	signedTx.EncodeRLP(&signedTxBuff)
