@@ -22,6 +22,7 @@ import (
 	"math/big"
 	"regexp"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/common/math"
@@ -64,18 +65,22 @@ func (b *backend) listAccounts(ctx context.Context, req *logical.Request, data *
 }
 
 func (b *backend) createAccount(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+
+	spew.Dump(req)
+
+	spew.Dump(data)
 	keyInput := data.Get("privateKey").(string)
 	var privateKey *ecdsa.PrivateKey
 	var privateKeyString string
 	var err error
 
 	if keyInput != "" {
-    re := regexp.MustCompile("[0-9a-fA-F]{64}$")
-    key := re.FindString(keyInput)
-    if key == "" {
-      b.Logger().Error("Input private key did not parse successfully", "privateKey", keyInput)
-      return nil, fmt.Errorf("privateKey must be a 32-byte hexidecimal string")
-    }
+		re := regexp.MustCompile("[0-9a-fA-F]{64}$")
+		key := re.FindString(keyInput)
+		if key == "" {
+			b.Logger().Error("Input private key did not parse successfully", "privateKey", keyInput)
+			return nil, fmt.Errorf("privateKey must be a 32-byte hexidecimal string")
+		}
 		privateKey, err = crypto.HexToECDSA(key)
 		if err != nil {
 			b.Logger().Error("Error reconstructing private key from input hex", "error", err)
@@ -99,7 +104,7 @@ func (b *backend) createAccount(ctx context.Context, req *logical.Request, data 
 	hash.Write(publicKeyBytes[1:])
 	address := hexutil.Encode(hash.Sum(nil)[12:])
 
-	accountPath := fmt.Sprintf("accounts/%s", address)
+	accountPath := fmt.Sprintf("accounts/%s", data.Get("name").(string))
 
 	accountJSON := &Account{
 		Address:    address,

@@ -7,7 +7,7 @@ import (
 
 func pathCreateAndList(b *backend) *framework.Path {
 	return &framework.Path{
-		Pattern: "accounts/?",
+		Pattern: "accounts/" + framework.GenericNameRegex("name") + "?",
 		Callbacks: map[logical.Operation]framework.OperationFunc{
 			logical.ListOperation:   b.listAccounts,
 			logical.UpdateOperation: b.createAccount,
@@ -20,10 +20,14 @@ func pathCreateAndList(b *backend) *framework.Path {
 
     `,
 		Fields: map[string]*framework.FieldSchema{
-			"privateKey": &framework.FieldSchema{
+			"privateKey": {
 				Type:        framework.TypeString,
 				Description: "Hexidecimal string for the private key (32-byte or 64-char long). If present, the request will import the given key instead of generating a new key.",
 				Default:     "",
+			},
+			"name": {
+				Type:        framework.TypeString,
+				Description: "The name of the Ethereum account.",
 			},
 		},
 	}
