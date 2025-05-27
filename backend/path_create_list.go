@@ -7,7 +7,7 @@ import (
 
 func pathCreateAndList(b *backend) *framework.Path {
 	return &framework.Path{
-		Pattern: "accounts/" + framework.GenericNameRegex("name") + "?",
+		Pattern: "accounts/" + framework.GenericNameRegex("secret_id"),
 		Callbacks: map[logical.Operation]framework.OperationFunc{
 			logical.ListOperation:   b.listAccounts,
 			logical.UpdateOperation: b.createAccount,
@@ -16,7 +16,7 @@ func pathCreateAndList(b *backend) *framework.Path {
 		HelpDescription: `
 
     LIST - list all accounts
-    POST - create a new account
+    POST - create a new account with UUID as identifier
 
     `,
 		Fields: map[string]*framework.FieldSchema{
@@ -25,9 +25,9 @@ func pathCreateAndList(b *backend) *framework.Path {
 				Description: "Hexidecimal string for the private key (32-byte or 64-char long). If present, the request will import the given key instead of generating a new key.",
 				Default:     "",
 			},
-			"name": {
+			"secret_id": {
 				Type:        framework.TypeString,
-				Description: "The name of the Ethereum account.",
+				Description: "UUID to identify the Ethereum account. If not provided, a new UUID will be generated.",
 			},
 		},
 	}

@@ -28,6 +28,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/google/uuid"
 	"github.com/hashicorp/vault/sdk/framework"
 	"github.com/hashicorp/vault/sdk/logical"
 	"golang.org/x/crypto/sha3"
@@ -40,9 +41,10 @@ const (
 
 // Account is an Ethereum account
 type Account struct {
-	Address    string `json:"address"`
-	PrivateKey string `json:"private_key"`
-	PublicKey  string `json:"public_key"`
+	Address    string    `json:"address"`
+	PrivateKey string    `json:"private_key"`
+	PublicKey  string    `json:"public_key"`
+	SecretID   uuid.UUID `json:"secret_id"`
 }
 
 func paths(b *backend) []*framework.Path {
@@ -51,6 +53,7 @@ func paths(b *backend) []*framework.Path {
 		pathReadAndDelete(b),
 		pathSign(b),
 		pathExport(b),
+		//pathPublic(b),
 	}
 }
 
@@ -65,9 +68,7 @@ func (b *backend) listAccounts(ctx context.Context, req *logical.Request, data *
 }
 
 func (b *backend) createAccount(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-
 	spew.Dump(req)
-
 	spew.Dump(data)
 	keyInput := data.Get("privateKey").(string)
 	var privateKey *ecdsa.PrivateKey
@@ -104,12 +105,15 @@ func (b *backend) createAccount(ctx context.Context, req *logical.Request, data 
 	hash.Write(publicKeyBytes[1:])
 	address := hexutil.Encode(hash.Sum(nil)[12:])
 
-	accountPath := fmt.Sprintf("accounts/%s", data.Get("name").(string))
+	secretID := data.Get("secret_id").(uuid.UUID)
+
+	accountPath := fmt.Sprintf("accounts/%s", secretID.String())
 
 	accountJSON := &Account{
 		Address:    address,
 		PrivateKey: privateKeyString,
 		PublicKey:  publicKeyString,
+		SecretID:   secretID,
 	}
 
 	entry, _ := logical.StorageEntryJSON(accountPath, accountJSON)
@@ -121,7 +125,8 @@ func (b *backend) createAccount(ctx context.Context, req *logical.Request, data 
 
 	return &logical.Response{
 		Data: map[string]interface{}{
-			"address": accountJSON.Address,
+			"address":   accountJSON.Address,
+			"secret_id": accountJSON.SecretID,
 		},
 	}, nil
 }
