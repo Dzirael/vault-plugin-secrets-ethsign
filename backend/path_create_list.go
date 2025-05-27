@@ -20,10 +20,9 @@ func pathCreateAndList(b *backend) *framework.Path {
 
     `,
 		Fields: map[string]*framework.FieldSchema{
-			"privateKey": {
+			"secret_id": &framework.FieldSchema{
 				Type:        framework.TypeString,
-				Description: "Hexidecimal string for the private key (32-byte or 64-char long). If present, the request will import the given key instead of generating a new key.",
-				Default:     "",
+				Description: "UUID to identify the Ethereum account",
 			},
 		},
 	}

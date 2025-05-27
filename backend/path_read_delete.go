@@ -7,7 +7,7 @@ import (
 
 func pathReadAndDelete(b *backend) *framework.Path {
 	return &framework.Path{
-		Pattern:      "accounts/" + framework.GenericNameRegex("name"),
+		Pattern:      "accounts/" + framework.GenericNameRegex("name") + "?",
 		HelpSynopsis: "Create, get or delete an Ethereum account by name",
 		HelpDescription: `
 

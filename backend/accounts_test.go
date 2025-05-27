@@ -32,6 +32,8 @@ import (
 	"github.com/hashicorp/vault/sdk/helper/logging"
 	"github.com/hashicorp/vault/sdk/logical"
 
+	"github.com/google/uuid"
+	"github.com/hashicorp/vault/sdk/framework"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -595,4 +597,64 @@ func contains(arr []*big.Int, value *big.Int) bool {
 		}
 	}
 	return false
+}
+
+func TestCreateAccount(t *testing.T) {
+	b, storage := getTestBackend(t)
+
+	// Тест 1: Создание аккаунта с новым UUID
+	secretID := uuid.New()
+	req := &logical.Request{
+		Storage: storage,
+		Data: map[string]interface{}{
+			"secret_id": secretID.String(),
+		},
+	}
+
+	resp, err := b.createAccount(context.Background(), req, &framework.FieldData{
+		Raw:    req.Data,
+		Schema: pathCreateAndList(b).Fields,
+	})
+	assert.NoError(t, err)
+	assert.NotNil(t, resp)
+	assert.Equal(t, secretID.String(), resp.Data["secret_id"])
+	assert.NotEmpty(t, resp.Data["address"])
+
+	// Тест 2: Попытка создать аккаунт с тем же UUID
+	resp, err = b.createAccount(context.Background(), req, &framework.FieldData{
+		Raw:    req.Data,
+		Schema: pathCreateAndList(b).Fields,
+	})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "already exists")
+
+	// Тест 3: Попытка создать аккаунт без UUID
+	req.Data = map[string]interface{}{}
+	resp, err = b.createAccount(context.Background(), req, &framework.FieldData{
+		Raw:    req.Data,
+		Schema: pathCreateAndList(b).Fields,
+	})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "secret_id is required")
+
+	// Тест 4: Попытка создать аккаунт с некорректным UUID
+	req.Data = map[string]interface{}{
+		"secret_id": "invalid-uuid",
+	}
+	resp, err = b.createAccount(context.Background(), req, &framework.FieldData{
+		Raw:    req.Data,
+		Schema: pathCreateAndList(b).Fields,
+	})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid secret_id format")
+}
+
+func getTestBackend(t *testing.T) (*backend, logical.Storage) {
+	config := logical.TestBackendConfig()
+	config.StorageView = &logical.InmemStorage{}
+	b, err := Factory(context.Background(), config)
+	if err != nil {
+		t.Fatalf("Failed to create backend: %v", err)
+	}
+	return b.(*backend), config.StorageView
 }
