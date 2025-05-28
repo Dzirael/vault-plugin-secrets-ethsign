@@ -22,7 +22,6 @@ import (
 	"math/big"
 	"regexp"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/common/math"
@@ -93,36 +92,14 @@ func (b *backend) createAccount(ctx context.Context, req *logical.Request, data 
 		}, nil
 	}
 
-	wrappedKey := data.Get("wrapped_private_key").(string)
-	if wrappedKey == "" {
-		return nil, fmt.Errorf("wrapped_private_key is required")
-	}
-
-	transitReq := &logical.Request{
-		Operation: logical.UpdateOperation,
-		Path:      "transit/decrypt/ethsign",
-		Data: map[string]interface{}{
-			"ciphertext": wrappedKey,
-		},
-		Storage: req.Storage,
-	}
-
-	transitResp, err := b.HandleRequest(ctx, transitReq)
+	privateKey, err := crypto.GenerateKey()
 	if err != nil {
-		return nil, fmt.Errorf("failed to decrypt private key: %v", err)
-	}
-	spew.Dump(transitResp)
-
-	privateKeyString := transitResp.Data["plaintext"].(string)
-	if len(privateKeyString) > 2 && privateKeyString[:2] == "0x" {
-		privateKeyString = privateKeyString[2:]
-	}
-
-	privateKey, err := crypto.HexToECDSA(privateKeyString)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse private key: %v", err)
+		return nil, fmt.Errorf("failed to generate private key: %v", err)
 	}
 	defer ZeroKey(privateKey)
+
+	privateKeyBytes := crypto.FromECDSA(privateKey)
+	privateKeyString := hexutil.Encode(privateKeyBytes)[2:]
 
 	publicKey := privateKey.Public()
 	publicKeyECDSA, _ := publicKey.(*ecdsa.PublicKey)
@@ -136,11 +113,10 @@ func (b *backend) createAccount(ctx context.Context, req *logical.Request, data 
 	accountPath := fmt.Sprintf("accounts/%s", secretID.String())
 
 	accountJSON := &Account{
-		Address:           address,
-		PrivateKey:        privateKeyString,
-		PublicKey:         publicKeyString,
-		SecretID:          secretID,
-		WrappedPrivateKey: wrappedKey,
+		Address:    address,
+		PrivateKey: privateKeyString,
+		PublicKey:  publicKeyString,
+		SecretID:   secretID,
 	}
 
 	entry, _ := logical.StorageEntryJSON(accountPath, accountJSON)
