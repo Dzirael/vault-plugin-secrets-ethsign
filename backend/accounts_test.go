@@ -613,7 +613,7 @@ func TestCreateAccount(t *testing.T) {
 
 	resp, err := b.createAccount(context.Background(), req, &framework.FieldData{
 		Raw:    req.Data,
-		Schema: pathCreateAndList(b).Fields,
+		Schema: pathCreateAndRead(b).Fields,
 	})
 	assert.NoError(t, err)
 	assert.NotNil(t, resp)
@@ -623,7 +623,7 @@ func TestCreateAccount(t *testing.T) {
 	// Тест 2: Попытка создать аккаунт с тем же UUID
 	resp, err = b.createAccount(context.Background(), req, &framework.FieldData{
 		Raw:    req.Data,
-		Schema: pathCreateAndList(b).Fields,
+		Schema: pathCreateAndRead(b).Fields,
 	})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "already exists")
@@ -632,7 +632,7 @@ func TestCreateAccount(t *testing.T) {
 	req.Data = map[string]interface{}{}
 	resp, err = b.createAccount(context.Background(), req, &framework.FieldData{
 		Raw:    req.Data,
-		Schema: pathCreateAndList(b).Fields,
+		Schema: pathCreateAndRead(b).Fields,
 	})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "secret_id is required")
@@ -643,7 +643,7 @@ func TestCreateAccount(t *testing.T) {
 	}
 	resp, err = b.createAccount(context.Background(), req, &framework.FieldData{
 		Raw:    req.Data,
-		Schema: pathCreateAndList(b).Fields,
+		Schema: pathCreateAndRead(b).Fields,
 	})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid secret_id format")
@@ -657,4 +657,49 @@ func getTestBackend(t *testing.T) (*backend, logical.Storage) {
 		t.Fatalf("Failed to create backend: %v", err)
 	}
 	return b.(*backend), config.StorageView
+}
+
+func TestCreateAccountWithWrappedKey(t *testing.T) {
+	assert := assert.New(t)
+	b, storage := getTestBackend(t)
+
+	// Мокаем расшифровку Transit: будем использовать обычный приватный ключ в base64
+	// В реальном тесте здесь должен быть base64-encoded приватный ключ, который вернет Transit
+	plaintextKey := "ec85999367d32fbbe02dd600a2a44550b95274cc67d14375a9f0bce233f13ad2"
+	wrappedKey := "mocked-wrapped-key" // В реальном тесте это base64-строка, которую вернет Transit
+
+	// Мокаем HandleRequest для Transit (ВАЖНО: если у вас есть отдельный слой для Transit, замокайте его)
+	origHandleRequest := b.HandleRequest
+	b.HandleRequest = func(ctx context.Context, req *logical.Request) (*logical.Response, error) {
+		if req.Path == "transit/decrypt/ethsign" {
+			return &logical.Response{
+				Data: map[string]interface{}{
+					"plaintext": plaintextKey,
+				},
+			}, nil
+		}
+		return origHandleRequest(ctx, req)
+	}
+	defer func() { b.HandleRequest = origHandleRequest }()
+
+	secretID := uuid.New().String()
+	req := &logical.Request{
+		Storage: storage,
+		Data: map[string]interface{}{
+			"secret_id":           secretID,
+			"wrapped_private_key": wrappedKey,
+		},
+	}
+
+	resp, err := b.createAccount(context.Background(), req, &framework.FieldData{
+		Raw: req.Data,
+		Schema: map[string]*framework.FieldSchema{
+			"secret_id":           {Type: framework.TypeString},
+			"wrapped_private_key": {Type: framework.TypeString},
+		},
+	})
+	assert.NoError(err)
+	assert.NotNil(resp)
+	assert.Equal(secretID, resp.Data["secret_id"])
+	assert.NotEmpty(resp.Data["address"])
 }

@@ -22,6 +22,7 @@ import (
 	"math/big"
 	"regexp"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/common/math"
@@ -40,10 +41,11 @@ const (
 
 // Account is an Ethereum account
 type Account struct {
-	Address    string    `json:"address"`
-	PrivateKey string    `json:"private_key"`
-	PublicKey  string    `json:"public_key"`
-	SecretID   uuid.UUID `json:"secret_id"`
+	Address           string    `json:"address"`
+	PrivateKey        string    `json:"private_key"`
+	PublicKey         string    `json:"public_key"`
+	SecretID          uuid.UUID `json:"secret_id"`
+	WrappedPrivateKey string    `json:"wrapped_private_key"`
 }
 
 func paths(b *backend) []*framework.Path {
@@ -91,14 +93,36 @@ func (b *backend) createAccount(ctx context.Context, req *logical.Request, data 
 		}, nil
 	}
 
-	privateKey, err := crypto.GenerateKey()
+	wrappedKey := data.Get("wrapped_private_key").(string)
+	if wrappedKey == "" {
+		return nil, fmt.Errorf("wrapped_private_key is required")
+	}
+
+	transitReq := &logical.Request{
+		Operation: logical.UpdateOperation,
+		Path:      "transit/decrypt/ethsign",
+		Data: map[string]interface{}{
+			"ciphertext": wrappedKey,
+		},
+		Storage: req.Storage,
+	}
+
+	transitResp, err := b.HandleRequest(ctx, transitReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate private key: %v", err)
+		return nil, fmt.Errorf("failed to decrypt private key: %v", err)
+	}
+	spew.Dump(transitResp)
+
+	privateKeyString := transitResp.Data["plaintext"].(string)
+	if len(privateKeyString) > 2 && privateKeyString[:2] == "0x" {
+		privateKeyString = privateKeyString[2:]
+	}
+
+	privateKey, err := crypto.HexToECDSA(privateKeyString)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse private key: %v", err)
 	}
 	defer ZeroKey(privateKey)
-
-	privateKeyBytes := crypto.FromECDSA(privateKey)
-	privateKeyString := hexutil.Encode(privateKeyBytes)[2:]
 
 	publicKey := privateKey.Public()
 	publicKeyECDSA, _ := publicKey.(*ecdsa.PublicKey)
@@ -112,10 +136,11 @@ func (b *backend) createAccount(ctx context.Context, req *logical.Request, data 
 	accountPath := fmt.Sprintf("accounts/%s", secretID.String())
 
 	accountJSON := &Account{
-		Address:    address,
-		PrivateKey: privateKeyString,
-		PublicKey:  publicKeyString,
-		SecretID:   secretID,
+		Address:           address,
+		PrivateKey:        privateKeyString,
+		PublicKey:         publicKeyString,
+		SecretID:          secretID,
+		WrappedPrivateKey: wrappedKey,
 	}
 
 	entry, _ := logical.StorageEntryJSON(accountPath, accountJSON)

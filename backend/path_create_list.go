@@ -10,11 +10,13 @@ func pathCreateAndRead(b *backend) *framework.Path {
 		Pattern: "accounts/" + framework.GenericNameRegex("secret_id"),
 		Callbacks: map[logical.Operation]framework.OperationFunc{
 			logical.UpdateOperation: b.createAccount,
+			logical.ListOperation:   b.listAccounts,
 		},
 		HelpSynopsis: "Create or read a new account with UUID as identifier",
 		HelpDescription: `
 
     POST - create or read a new account with UUID as identifier
+	LIST - list all accounts
 
     `,
 		Fields: map[string]*framework.FieldSchema{
