@@ -53,6 +53,8 @@ func paths(b *backend) []*framework.Path {
 		//pathReadAndDelete(b),
 		pathSign(b),
 		pathExport(b),
+		pathEthereumImport(b),
+		pathEthereumWrappingKey(b),
 		//pathPublic(b),
 	}
 }
