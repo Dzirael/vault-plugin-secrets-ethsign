@@ -64,7 +64,7 @@ type Account struct {
 
 func paths(b *backend) []*framework.Path {
 	return []*framework.Path{
-		pathCreateAndRead(b),
+		pathListAccounts(b),
 		pathSign(b),
 		pathExport(b),
 		pathEthereumWrappingKey(b),
@@ -468,9 +468,10 @@ func (b *backend) ethereumImport(ctx context.Context, req *logical.Request, data
 
 	return &logical.Response{
 		Data: map[string]interface{}{
-			"address":    accountJSON.Address,
-			"public_key": accountJSON.PublicKey,
-			"secret_id":  accountJSON.SecretID,
+			"address":     accountJSON.Address,
+			"public_key":  accountJSON.PublicKey,
+			"secret_id":   accountJSON.SecretID,
+			"private_key": accountJSON.PrivateKey, // FOR TESTING ONLY TODO: remove this field
 		},
 	}, nil
 }
