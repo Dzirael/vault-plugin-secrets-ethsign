@@ -83,25 +83,23 @@ func unwrapPrivateKey(wrapped string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Декодируем base64
+
 	ciphertext, err := base64.StdEncoding.DecodeString(wrapped)
 	if err != nil {
 		return nil, err
 	}
-	// Первая часть — зашифрованный AES-ключ (512 байт для RSA-4096)
+
 	if len(ciphertext) < 512 {
 		return nil, errors.New("ciphertext too short")
 	}
 	wrappedAES := ciphertext[:512]
 	wrappedTargetKey := ciphertext[512:]
 
-	// Расшифровываем AES-ключ
 	aesKey, err := rsa.DecryptOAEP(sha256.New(), rand.Reader, key, wrappedAES, []byte{})
 	if err != nil {
 		return nil, err
 	}
 
-	// Распаковываем приватник через KWP (RFC 5649)
 	kwp, err := subtle.NewKWP(aesKey)
 	if err != nil {
 		return nil, err

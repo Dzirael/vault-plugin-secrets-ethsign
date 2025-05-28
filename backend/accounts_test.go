@@ -17,6 +17,7 @@ package backend
 import (
 	"bytes"
 	"context"
+	"crypto/x509"
 	"errors"
 	"math/big"
 	"reflect"
@@ -31,6 +32,8 @@ import (
 	log "github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/vault/sdk/helper/logging"
 	"github.com/hashicorp/vault/sdk/logical"
+
+	"encoding/pem"
 
 	"github.com/google/uuid"
 	"github.com/hashicorp/vault/sdk/framework"
@@ -659,47 +662,29 @@ func getTestBackend(t *testing.T) (*backend, logical.Storage) {
 	return b.(*backend), config.StorageView
 }
 
-func TestCreateAccountWithWrappedKey(t *testing.T) {
-	assert := assert.New(t)
-	b, storage := getTestBackend(t)
-
-	// Мокаем расшифровку Transit: будем использовать обычный приватный ключ в base64
-	// В реальном тесте здесь должен быть base64-encoded приватный ключ, который вернет Transit
-	plaintextKey := "ec85999367d32fbbe02dd600a2a44550b95274cc67d14375a9f0bce233f13ad2"
-	wrappedKey := "mocked-wrapped-key" // В реальном тесте это base64-строка, которую вернет Transit
-
-	// Мокаем HandleRequest для Transit (ВАЖНО: если у вас есть отдельный слой для Transit, замокайте его)
-	origHandleRequest := b.HandleRequest
-	b.HandleRequest = func(ctx context.Context, req *logical.Request) (*logical.Response, error) {
-		if req.Path == "transit/decrypt/ethsign" {
-			return &logical.Response{
-				Data: map[string]interface{}{
-					"plaintext": plaintextKey,
-				},
-			}, nil
-		}
-		return origHandleRequest(ctx, req)
+func TestGenerateWrappingKey(t *testing.T) {
+	key, err := getOrCreateWrappingKey()
+	if err != nil {
+		t.Fatalf("Ошибка генерации RSA-4096 ключа: %v", err)
 	}
-	defer func() { b.HandleRequest = origHandleRequest }()
-
-	secretID := uuid.New().String()
-	req := &logical.Request{
-		Storage: storage,
-		Data: map[string]interface{}{
-			"secret_id":           secretID,
-			"wrapped_private_key": wrappedKey,
-		},
+	t.Logf("key: %+v", key)
+	if key == nil {
+		t.Fatal("Ключ не был сгенерирован")
 	}
-
-	resp, err := b.createAccount(context.Background(), req, &framework.FieldData{
-		Raw: req.Data,
-		Schema: map[string]*framework.FieldSchema{
-			"secret_id":           {Type: framework.TypeString},
-			"wrapped_private_key": {Type: framework.TypeString},
-		},
-	})
-	assert.NoError(err)
-	assert.NotNil(resp)
-	assert.Equal(secretID, resp.Data["secret_id"])
-	assert.NotEmpty(resp.Data["address"])
+	if key.N.BitLen() != 4096 {
+		t.Fatalf("Длина ключа не 4096 бит: %d", key.N.BitLen())
+	}
+	t.Logf("key.Public(): %+v", key.Public())
+	// Проверим, что публичная часть корректно маршалится в PKIX
+	derBytes, err := x509.MarshalPKIXPublicKey(key.Public())
+	t.Logf("marshal err: %v", err)
+	if err != nil {
+		t.Fatalf("Ошибка маршалинга публичного ключа: %v", err)
+	}
+	pemBlock := &pem.Block{
+		Type:  "PUBLIC KEY",
+		Bytes: derBytes,
+	}
+	pemBytes := pem.EncodeToMemory(pemBlock)
+	t.Logf("PEM публичного ключа:\n%s", pemBytes)
 }

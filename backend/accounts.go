@@ -18,9 +18,14 @@ import (
 	"bytes"
 	"context"
 	"crypto/ecdsa"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"math/big"
 	"regexp"
+	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -38,6 +43,11 @@ const (
 	InvalidAddress string = "InvalidAddress"
 )
 
+var (
+	wrappingKey     *rsa.PrivateKey
+	wrappingKeyOnce sync.Once
+)
+
 // Account is an Ethereum account
 type Account struct {
 	Address           string    `json:"address"`
@@ -50,11 +60,11 @@ type Account struct {
 func paths(b *backend) []*framework.Path {
 	return []*framework.Path{
 		pathCreateAndRead(b),
-		//pathReadAndDelete(b),
 		pathSign(b),
 		pathExport(b),
 		pathEthereumImport(b),
 		pathEthereumWrappingKey(b),
+		//pathReadAndDelete(b),
 		//pathPublic(b),
 	}
 }
@@ -351,4 +361,34 @@ func ZeroKey(k *ecdsa.PrivateKey) {
 	for i := range b {
 		b[i] = 0
 	}
+}
+
+func (b *backend) pathEthereumWrappingKeyRead(ctx context.Context, req *logical.Request, _ *framework.FieldData) (*logical.Response, error) {
+	key, err := getOrCreateWrappingKey()
+	if err != nil {
+		return nil, err
+	}
+	pub := key.Public()
+	derBytes, err := x509.MarshalPKIXPublicKey(pub)
+	if err != nil {
+		return nil, err
+	}
+	pemBlock := &pem.Block{
+		Type:  "PUBLIC KEY",
+		Bytes: derBytes,
+	}
+	pemBytes := pem.EncodeToMemory(pemBlock)
+	return &logical.Response{
+		Data: map[string]interface{}{
+			"public_key": string(pemBytes),
+		},
+	}, nil
+}
+
+func getOrCreateWrappingKey() (*rsa.PrivateKey, error) {
+	var err error
+	wrappingKeyOnce.Do(func() {
+		wrappingKey, err = rsa.GenerateKey(rand.Reader, 4096)
+	})
+	return wrappingKey, err
 }
