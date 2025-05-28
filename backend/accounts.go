@@ -75,7 +75,7 @@ func paths(b *backend) []*framework.Path {
 }
 
 func (b *backend) listAccounts(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	vals, err := req.Storage.List(ctx, "accounts/")
+	vals, err := req.Storage.List(ctx, "accounts")
 	if err != nil {
 		b.Logger().Error("Failed to retrieve the list of accounts", "error", err)
 		return nil, err
