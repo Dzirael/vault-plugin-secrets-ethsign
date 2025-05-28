@@ -23,6 +23,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	"log"
 	"math/big"
 	"regexp"
 	"sync"
@@ -62,8 +63,8 @@ func paths(b *backend) []*framework.Path {
 		pathCreateAndRead(b),
 		pathSign(b),
 		pathExport(b),
-		pathEthereumImport(b),
-		pathEthereumWrappingKey(b),
+		//pathEthereumImport(b),
+		//pathEthereumWrappingKey(b),
 		//pathReadAndDelete(b),
 		//pathPublic(b),
 	}
@@ -364,6 +365,7 @@ func ZeroKey(k *ecdsa.PrivateKey) {
 }
 
 func (b *backend) pathEthereumWrappingKeyRead(ctx context.Context, req *logical.Request, _ *framework.FieldData) (*logical.Response, error) {
+	log.Println("pathEthereumWrappingKeyRead")
 	key, err := getOrCreateWrappingKey()
 	if err != nil {
 		return nil, err
