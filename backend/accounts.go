@@ -20,8 +20,11 @@ import (
 	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"log"
 	"math/big"
@@ -33,6 +36,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/google/tink/go/kwp/subtle"
 	"github.com/google/uuid"
 	"github.com/hashicorp/vault/sdk/framework"
 	"github.com/hashicorp/vault/sdk/logical"
@@ -64,7 +68,7 @@ func paths(b *backend) []*framework.Path {
 		pathSign(b),
 		pathExport(b),
 		pathEthereumWrappingKey(b),
-		//pathEthereumImport(b),
+		pathEthereumImport(b),
 		//pathReadAndDelete(b),
 		//pathPublic(b),
 	}
@@ -393,4 +397,113 @@ func getOrCreateWrappingKey() (*rsa.PrivateKey, error) {
 		wrappingKey, err = rsa.GenerateKey(rand.Reader, 4096)
 	})
 	return wrappingKey, err
+}
+
+func (b *backend) ethereumImport(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	secretIDStr := data.Get("secret_id").(string)
+	if secretIDStr == "" {
+		return nil, errors.New("secret_id is required")
+	}
+	secretID, err := uuid.Parse(secretIDStr)
+	if err != nil {
+		return nil, errors.New("invalid secret_id format")
+	}
+
+	existingAccount, err := b.retrieveAccountBySecretID(ctx, req, secretID.String())
+	if err != nil {
+		return nil, err
+	}
+	if existingAccount != nil {
+		return &logical.Response{
+			Data: map[string]interface{}{
+				"address":    existingAccount.Address,
+				"public_key": existingAccount.PublicKey,
+				"secret_id":  existingAccount.SecretID,
+			},
+		}, nil
+	}
+
+	wrappedKey := data.Get("wrapped_private_key").(string)
+	if wrappedKey == "" {
+		return nil, errors.New("wrapped_private_key is required")
+	}
+
+	privateKeyBytes, err := unwrapPrivateKey(wrappedKey)
+	if err != nil {
+		return nil, errors.New("failed to unwrap private key: " + err.Error())
+	}
+
+	privateKey, err := crypto.ToECDSA(privateKeyBytes)
+	if err != nil {
+		return nil, errors.New("failed to parse ECDSA private key: " + err.Error())
+	}
+	defer ZeroKey(privateKey)
+
+	privateKeyString := hexutil.Encode(privateKeyBytes)[2:]
+
+	publicKey := privateKey.Public()
+	publicKeyECDSA, _ := publicKey.(*ecdsa.PublicKey)
+	publicKeyBytes := crypto.FromECDSAPub(publicKeyECDSA)
+	publicKeyString := hexutil.Encode(publicKeyBytes)[4:]
+
+	hash := sha3.NewLegacyKeccak256()
+	hash.Write(publicKeyBytes[1:])
+	address := hexutil.Encode(hash.Sum(nil)[12:])
+
+	accountPath := fmt.Sprintf("accounts/%s", secretID.String())
+
+	accountJSON := &Account{
+		Address:    address,
+		PrivateKey: privateKeyString,
+		PublicKey:  publicKeyString,
+		SecretID:   secretID,
+	}
+
+	entry, _ := logical.StorageEntryJSON(accountPath, accountJSON)
+	err = req.Storage.Put(ctx, entry)
+	if err != nil {
+		b.Logger().Error("Failed to save the imported account to storage", "error", err)
+		return nil, err
+	}
+
+	return &logical.Response{
+		Data: map[string]interface{}{
+			"address":    accountJSON.Address,
+			"public_key": accountJSON.PublicKey,
+			"secret_id":  accountJSON.SecretID,
+		},
+	}, nil
+}
+
+func unwrapPrivateKey(wrapped string) ([]byte, error) {
+	key, err := getOrCreateWrappingKey()
+	if err != nil {
+		return nil, err
+	}
+
+	ciphertext, err := base64.StdEncoding.DecodeString(wrapped)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(ciphertext) < 512 {
+		return nil, errors.New("ciphertext too short")
+	}
+	wrappedAES := ciphertext[:512]
+	wrappedTargetKey := ciphertext[512:]
+
+	aesKey, err := rsa.DecryptOAEP(sha256.New(), rand.Reader, key, wrappedAES, []byte{})
+	if err != nil {
+		return nil, err
+	}
+
+	kwp, err := subtle.NewKWP(aesKey)
+	if err != nil {
+		return nil, err
+	}
+	privateKey, err := kwp.Unwrap(wrappedTargetKey)
+	if err != nil {
+		return nil, err
+	}
+	return privateKey, nil
 }
