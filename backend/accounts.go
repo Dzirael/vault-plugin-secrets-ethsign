@@ -26,10 +26,8 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"log"
 	"math/big"
 	"regexp"
-	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -48,10 +46,10 @@ const (
 	InvalidAddress string = "InvalidAddress"
 )
 
-var (
-	wrappingKey     *rsa.PrivateKey
-	wrappingKeyOnce sync.Once
-)
+// WrappingKey represents the RSA key used for wrapping private keys
+type WrappingKey struct {
+	PrivateKey *rsa.PrivateKey `json:"private_key"`
+}
 
 // Account is an Ethereum account
 type Account struct {
@@ -368,9 +366,87 @@ func ZeroKey(k *ecdsa.PrivateKey) {
 	}
 }
 
+func ZeroRSAKey(k *rsa.PrivateKey) {
+	if k == nil {
+		return
+	}
+	// Очищаем приватные компоненты ключа
+	if k.D != nil {
+		b := k.D.Bits()
+		for i := range b {
+			b[i] = 0
+		}
+	}
+	if k.Primes != nil {
+		for _, prime := range k.Primes {
+			if prime != nil {
+				b := prime.Bits()
+				for i := range b {
+					b[i] = 0
+				}
+			}
+		}
+	}
+	if k.Precomputed.Dp != nil {
+		b := k.Precomputed.Dp.Bits()
+		for i := range b {
+			b[i] = 0
+		}
+	}
+	if k.Precomputed.Dq != nil {
+		b := k.Precomputed.Dq.Bits()
+		for i := range b {
+			b[i] = 0
+		}
+	}
+	if k.Precomputed.Qinv != nil {
+		b := k.Precomputed.Qinv.Bits()
+		for i := range b {
+			b[i] = 0
+		}
+	}
+}
+
+func (b *backend) getOrCreateWrappingKey(ctx context.Context, req *logical.Request) (*rsa.PrivateKey, error) {
+	entry, err := req.Storage.Get(ctx, "wrapping_key")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get wrapping key from storage: %v", err)
+	}
+
+	if entry != nil {
+		var key WrappingKey
+		if err := entry.DecodeJSON(&key); err != nil {
+			return nil, fmt.Errorf("failed to decode wrapping key: %v", err)
+		}
+		return key.PrivateKey, nil
+	}
+
+	privateKey, err := rsa.GenerateKey(rand.Reader, 4096)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate wrapping key: %v", err)
+	}
+
+	key := &WrappingKey{
+		PrivateKey: privateKey,
+	}
+	entry, err = logical.StorageEntryJSON("wrapping_key", key)
+	if err != nil {
+		ZeroRSAKey(privateKey)
+		return nil, fmt.Errorf("failed to create storage entry: %v", err)
+	}
+
+	if err := req.Storage.Put(ctx, entry); err != nil {
+		ZeroRSAKey(privateKey)
+		return nil, fmt.Errorf("failed to save wrapping key: %v", err)
+	}
+
+	key.PrivateKey = nil
+
+	return privateKey, nil
+}
+
 func (b *backend) pathEthereumWrappingKeyRead(ctx context.Context, req *logical.Request, _ *framework.FieldData) (*logical.Response, error) {
-	log.Println("pathEthereumWrappingKeyRead")
-	key, err := getOrCreateWrappingKey()
+	key, err := b.getOrCreateWrappingKey(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -389,14 +465,6 @@ func (b *backend) pathEthereumWrappingKeyRead(ctx context.Context, req *logical.
 			"public_key": string(pemBytes),
 		},
 	}, nil
-}
-
-func getOrCreateWrappingKey() (*rsa.PrivateKey, error) {
-	var err error
-	wrappingKeyOnce.Do(func() {
-		wrappingKey, err = rsa.GenerateKey(rand.Reader, 4096)
-	})
-	return wrappingKey, err
 }
 
 func (b *backend) ethereumImport(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
@@ -428,7 +496,7 @@ func (b *backend) ethereumImport(ctx context.Context, req *logical.Request, data
 		return nil, errors.New("wrapped_private_key is required")
 	}
 
-	privateKeyBytes, err := unwrapPrivateKey(wrappedKey)
+	privateKeyBytes, err := b.unwrapPrivateKey(ctx, req, wrappedKey)
 	if err != nil {
 		return nil, errors.New("failed to unwrap private key: " + err.Error())
 	}
@@ -476,11 +544,12 @@ func (b *backend) ethereumImport(ctx context.Context, req *logical.Request, data
 	}, nil
 }
 
-func unwrapPrivateKey(wrapped string) ([]byte, error) {
-	key, err := getOrCreateWrappingKey()
+func (b *backend) unwrapPrivateKey(ctx context.Context, req *logical.Request, wrapped string) ([]byte, error) {
+	key, err := b.getOrCreateWrappingKey(ctx, req)
 	if err != nil {
 		return nil, err
 	}
+	defer ZeroRSAKey(key)
 
 	ciphertext, err := base64.StdEncoding.DecodeString(wrapped)
 	if err != nil {
@@ -497,6 +566,11 @@ func unwrapPrivateKey(wrapped string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		for i := range aesKey {
+			aesKey[i] = 0
+		}
+	}()
 
 	kwp, err := subtle.NewKWP(aesKey)
 	if err != nil {
